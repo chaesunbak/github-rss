@@ -41,8 +41,36 @@ app.get("/api/rss", async (req, res) => {
   }
 });
 
-// iframe을 위한 HTML 엔드포인트
-app.get("/embed", async (req, res) => {
+// SVG 생성을 위한 설정
+const SVG_WIDTH = 400;
+const SVG_DEFAULT_HEIGHT_PER_POST = 40; // 포스트당 기본 높이
+const SVG_PADDING = 15;
+const SVG_LINE_HEIGHT = 18;
+const SVG_TITLE_FONT_SIZE = 14;
+const SVG_DATE_FONT_SIZE = 12;
+
+// Helper function to escape XML/SVG special characters
+function escapeXml(unsafe) {
+  return unsafe.replace(/[<>&'""]/g, function (c) {
+    switch (c) {
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case "&":
+        return "&amp;";
+      case "'":
+        return "&apos;";
+      case '"':
+        return "&quot;";
+      case '"':
+        return "&quot;"; // Handle curly double quotes
+    }
+  });
+}
+
+// Generate SVG for blog posts
+app.get("/svg", async (req, res) => {
   try {
     const { url, count } = req.query;
 
@@ -50,7 +78,6 @@ app.get("/embed", async (req, res) => {
       return res.status(400).send("RSS URL is required");
     }
 
-    // Parse count, default to 5 if not provided or invalid
     let postCount = 5;
     if (count) {
       const parsedCount = parseInt(count, 10);
@@ -60,89 +87,74 @@ app.get("/embed", async (req, res) => {
     }
 
     const feed = await parser.parseURL(url);
-    const posts = feed.items.slice(0, postCount); // Use postCount
+    const posts = feed.items.slice(0, postCount);
 
-    const html = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    // Calculate SVG height dynamically
+    const svgHeight =
+      SVG_PADDING * 2 + posts.length * SVG_DEFAULT_HEIGHT_PER_POST;
+
+    let currentY = SVG_PADDING + SVG_TITLE_FONT_SIZE; // Start Y position for the first title
+
+    const postElements = posts
+      .map((post) => {
+        const title = escapeXml(post.title || "No Title");
+        const pubDate = post.pubDate
+          ? new Date(post.pubDate).toLocaleDateString()
+          : "";
+        const postY = currentY;
+        currentY += SVG_DEFAULT_HEIGHT_PER_POST; // Increment Y for the next post
+
+        // Note: Links within SVG embedded via <img> often don't work.
+        // We are creating text elements only.
+        return `
+                <text x="${SVG_PADDING}" y="${postY}" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif, Apple Color Emoji, Segoe UI Emoji" font-size="${SVG_TITLE_FONT_SIZE}px" fill="#0366d6">
+                    ${title}
+                </text>
+                <text x="${SVG_PADDING}" y="${
+          postY + SVG_LINE_HEIGHT
+        }" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif, Apple Color Emoji, Segoe UI Emoji" font-size="${SVG_DATE_FONT_SIZE}px" fill="#586069">
+                    ${pubDate}
+                </text>
+            `;
+      })
+      .join("\n");
+
+    const svg = `
+            <svg 
+                width="${SVG_WIDTH}" 
+                height="${svgHeight}" 
+                viewBox="0 0 ${SVG_WIDTH} ${svgHeight}" 
+                fill="none" 
+                xmlns="http://www.w3.org/2000/svg"
+            >
                 <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-                        margin: 0;
-                        padding: 0;
-                        background: transparent;
-                    }
-                    .post-list {
-                        list-style: none;
-                        padding: 0;
-                        margin: 0;
-                    }
-                    .post-item {
-                        margin-bottom: 15px;
-                        padding: 10px;
-                        border-bottom: 1px solid #eee;
-                    }
-                    .post-title {
-                        font-size: 14px;
-                        margin: 0 0 5px 0;
-                    }
-                    .post-title a {
-                        color: #0366d6;
-                        text-decoration: none;
-                    }
-                    .post-title a:hover {
-                        text-decoration: underline;
-                    }
-                    .post-date {
-                        font-size: 12px;
-                        color: #666;
-                    }
+                    /* You can add basic styles here if needed */
                 </style>
-            </head>
-            <body>
-                <ul class="post-list">
-                    ${posts
-                      .map(
-                        (post) => `
-                        <li class="post-item">
-                            <h3 class="post-title">
-                                <a href="${post.link}" target="_blank">${post.title}</a>
-                            </h3>
-                            <div class="post-date" data-pubdate="${post.pubDate}"></div>
-                        </li>
-                    `
-                      )
-                      .join("")}
-                </ul>
-                <script>
-                    document.addEventListener('DOMContentLoaded', function() {
-                        const dateElements = document.querySelectorAll('.post-date[data-pubdate]');
-                        dateElements.forEach(el => {
-                            try {
-                                const pubDate = el.getAttribute('data-pubdate');
-                                if (pubDate) {
-                                    // Use browser's default locale
-                                    el.textContent = new Date(pubDate).toLocaleDateString();
-                                }
-                            } catch (e) {
-                                console.error('Error formatting date:', e);
-                                // Optionally leave the element empty or show the original string
-                                // el.textContent = el.getAttribute('data-pubdate'); 
-                            }
-                        });
-                    });
-                </script>
-            </body>
-            </html>
+                <rect 
+                    x="0.5" 
+                    y="0.5" 
+                    width="${SVG_WIDTH - 1}" 
+                    height="${svgHeight - 1}" 
+                    rx="4.5" 
+                    fill="#fff" 
+                    stroke="#e1e4e8"
+                /> 
+                ${postElements}
+            </svg>
         `;
 
-    res.send(html);
+    res.setHeader("Content-Type", "image/svg+xml");
+    res.setHeader("Cache-Control", "no-cache, max-age=0, must-revalidate"); // Prevent caching
+    res.send(svg);
   } catch (error) {
-    console.error("Error generating iframe content:", error);
-    res.status(500).send("Failed to generate iframe content");
+    console.error("Error generating SVG content:", error);
+    // Return a simple error SVG
+    const errorSvg = `
+            <svg width="100" height="20" xmlns="http://www.w3.org/2000/svg">
+                <text x="5" y="15" font-family="sans-serif" font-size="10" fill="red">Error</text>
+            </svg>`;
+    res.setHeader("Content-Type", "image/svg+xml");
+    res.status(500).send(errorSvg);
   }
 });
 
