@@ -1,7 +1,7 @@
 {
-  "name": "github-rss",
+  "name": "rss-to-svg",
   "version": "1.0.0",
-  "description": "Service to display recent blog posts in GitHub profile using RSS",
+  "description": "Service to display recent blog posts as an SVG image",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
