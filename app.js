@@ -109,18 +109,32 @@ app.get("/embed", async (req, res) => {
                         (post) => `
                         <li class="post-item">
                             <h3 class="post-title">
-                                <a href="${post.link}" target="_blank">${
-                          post.title
-                        }</a>
+                                <a href="${post.link}" target="_blank">${post.title}</a>
                             </h3>
-                            <div class="post-date">${new Date(
-                              post.pubDate
-                            ).toLocaleDateString()}</div>
+                            <div class="post-date" data-pubdate="${post.pubDate}"></div>
                         </li>
                     `
                       )
                       .join("")}
                 </ul>
+                <script>
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const dateElements = document.querySelectorAll('.post-date[data-pubdate]');
+                        dateElements.forEach(el => {
+                            try {
+                                const pubDate = el.getAttribute('data-pubdate');
+                                if (pubDate) {
+                                    // Use browser's default locale
+                                    el.textContent = new Date(pubDate).toLocaleDateString();
+                                }
+                            } catch (e) {
+                                console.error('Error formatting date:', e);
+                                // Optionally leave the element empty or show the original string
+                                // el.textContent = el.getAttribute('data-pubdate'); 
+                            }
+                        });
+                    });
+                </script>
             </body>
             </html>
         `;
